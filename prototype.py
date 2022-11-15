@@ -126,6 +126,7 @@ def solve(num_qubits,  g_mat, fs):
 
 def extract_circuit(num_qubits, k, cs, model):
     circuit = QuantumCircuit(num_qubits)
+    applied_rz = [False] * len(cs)
     for lk in range(k+1):
         c = None
         t = None
@@ -136,8 +137,9 @@ def extract_circuit(num_qubits, k, cs, model):
                     c = v[1]
                 if v[0] == "t":
                     t = v[1]
-                if v[0] == "p":
+                if v[0] == "p" and not applied_rz[v[3]]:
                     circuit.rz(cs[v[3]], v[1])
+                    applied_rz[v[3]] = True
         if lk < k:
             circuit.cx(c, t)
     return circuit
