@@ -1,6 +1,8 @@
 from pysat.formula import IDPool
 from pysat.card import CardEnc
 from pysat.solvers import Solver
+from qiskit.circuit import QuantumCircuit
+import math
 
 def initial_matrix_is_identity(num_qubits, vpool):
     clauses = []
@@ -105,16 +107,52 @@ def solve_k(num_qubits,  g_mat, fs, k):
     with Solver(name='cd', ) as s:
         for clause in clauses:
             s.add_clause(clause)
-            print([pretty_print_var(x, vpool, aux_vars) for x in clause])
-            print(s.solve())
+            # print([pretty_print_var(x, vpool, aux_vars) for x in clause])
+            # print(s.solve())
+            s.solve()
         if s.get_status():
-            print(s.get_model())
-            print([vpool.obj(x)  for x in s.get_model() if x > 0])
-        return s.get_status()
+            # print(s.get_model())
+            # print([vpool.obj(x)  for x in s.get_model() if x > 0])
+            return s.get_status(),[vpool.obj(x) for x in s.get_model() if x > 0]
+        return s.get_status(),[]
+
 def solve(num_qubits,  g_mat, fs):
     solved = False
     k = 0
     while not solved:
         k += 1
-        solved = solve_k(num_qubits,  g_mat, fs, k)
-    return
+        solved, model = solve_k(num_qubits,  g_mat, fs, k)
+    return k, model
+
+def extract_circuit(num_qubits, k, cs, model):
+    circuit = QuantumCircuit(num_qubits)
+    for lk in range(k+1):
+        c = None
+        t = None
+        for v in model:
+            if v is None: continue
+            if v[2] == lk:
+                if v[0] == "q":
+                    c = v[1]
+                if v[0] == "t":
+                    t = v[1]
+                if v[0] == "p":
+                    circuit.rz(cs[v[3]], v[1])
+        if lk < k:
+            circuit.cx(c, t)
+    return circuit
+
+
+if __name__ == "__main__":
+    num_qubits = 3
+    g_mat = [
+        [1, 0, 0], 
+        [1, 1, 0], 
+        [1, 1, 1], 
+        ]
+    fs = [[1, 1, 0], [1, 1, 1]]
+    cs = [math.pi/4, 7*math.pi/4]
+    k, model = solve(num_qubits, g_mat, fs)
+    print(k)
+    print(model)
+    print(extract_circuit(num_qubits, k, cs, model).qasm())
