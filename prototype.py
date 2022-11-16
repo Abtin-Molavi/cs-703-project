@@ -161,6 +161,7 @@ def layout_circuit(file_name):
     pm.run(circ).qasm(filename="mapped_"+os.basename(file_name))
 
 
+
 if __name__ == "__main__":
     num_qubits = 3
     g_mat = [

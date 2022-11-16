@@ -11,15 +11,18 @@ from qiskit.circuit.library.standard_gates import (IGate, U1Gate, U2Gate, U3Gate
 from qiskit.circuit.exceptions import CircuitError
 from qiskit.transpiler import CouplingMap, PassManager
 from qiskit.transpiler.passes import SabreSwap, SabreLayout, ApplyLayout, FullAncillaAllocation, EnlargeWithAncilla
+import numpy as np
 
 
 def random_circuit(num_qubits, depth, max_operands=3, measure=False,
-                   conditional=False, reset=False, seed=None):
+                   conditional=False, reset=False, seed=None, cxRZOnly=False):
     
     if max_operands < 1 or max_operands > 3:
         raise CircuitError("max_operands must be between 1 and 3")
-
-    one_q_ops = [IGate, U1Gate, U2Gate, U3Gate, XGate, YGate, ZGate,
+    if cxRZOnly:
+            one_q_ops = [RZGate]
+    else:
+            one_q_ops = [IGate, U1Gate, U2Gate, U3Gate, XGate, YGate, ZGate,
                  HGate, SGate, SdgGate, TGate, TdgGate, RXGate, RYGate, RZGate]
     one_param = [U1Gate, RXGate, RYGate, RZGate, RZZGate, CU1Gate, CRZGate]
     two_param = [U2Gate]
@@ -80,3 +83,9 @@ def random_circuit(num_qubits, depth, max_operands=3, measure=False,
         qc.measure(qr, cr)
 
     return qc
+
+if __name__ == "__main__": 
+    for num_qubits in range(1,17):
+        for depth in range(1,17):
+            random_circuit(num_qubits, depth, max_operands=2, measure=False,
+                        conditional=False, reset=False, seed=None, cxRZOnly=True).qasm(filename=f"random_circuits/random_q{num_qubits}_d{depth}")
