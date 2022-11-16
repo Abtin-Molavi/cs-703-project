@@ -1,7 +1,11 @@
+import os
 from pysat.formula import IDPool
 from pysat.card import CardEnc
 from pysat.solvers import Solver
+import numpy as np
 from qiskit.circuit import QuantumCircuit
+from qiskit.transpiler.passes import SabreLayout
+from qiskit.transpiler import PassManager
 import math
 
 def initial_matrix_is_identity(num_qubits, vpool):
@@ -44,8 +48,14 @@ def cnot_well_defined(num_qubits,vpool, k, aux_vars):
         clauses.extend([[-vpool.id(('q', i, lk)), -vpool.id(('t', i , lk)) ] for i in range(num_qubits)])
         clauses.extend(CardEnc.equals([vpool.id(('q', i, lk)) for i in range(num_qubits)], 1, vpool=aux_vars).clauses)
         clauses.extend(CardEnc.equals([vpool.id(('t', i, lk)) for i in range(num_qubits)], 1, vpool=aux_vars).clauses)
+    return clauses
 
-
+def cnots_executable(num_qubits ,vpool, k, cm):
+    clauses = []
+    for lk in range(k):
+        for i in range(num_qubits):
+                adjacent = [t for [t] in np.argwhere(cm[i] > 0)]
+                clauses.append([-vpool.id(('q', i, lk))] + [vpool.id(("t", j, lk)) for j in adjacent])
     return clauses
 
 def h_encodes_activated(num_qubits, vpool, k,):
@@ -86,7 +96,7 @@ def pretty_print_var(x, vpool, aux_vars):
         else: 
             return("aux_var")
 
-def solve_k(num_qubits,  g_mat, fs, k):
+def solve_k(num_qubits,  g_mat, fs, k, cm):
     num_a  = num_qubits*num_qubits*(k+1)
     num_q = num_qubits*k
     num_t = num_q
@@ -100,7 +110,8 @@ def solve_k(num_qubits,  g_mat, fs, k):
             final_matrix_properties(num_qubits, vpool, g_mat, fs, k) +
             cnot_well_defined(num_qubits,vpool, k, aux_vars) +
             h_encodes_activated(num_qubits, vpool, k,) +
-            transformation_clauses(num_qubits, vpool, k,)
+            transformation_clauses(num_qubits, vpool, k,) +
+            cnots_executable(num_qubits ,vpool, k, cm)
             ) 
     # for clause in cnot_well_defined(num_qubits,vpool, k, aux_vars):
     #     print([vpool.obj(x) for x in clause])        
@@ -116,12 +127,12 @@ def solve_k(num_qubits,  g_mat, fs, k):
             return s.get_status(),[vpool.obj(x) for x in s.get_model() if x > 0]
         return s.get_status(),[]
 
-def solve(num_qubits,  g_mat, fs):
+def solve(num_qubits,  g_mat, fs, cm):
     solved = False
     k = 0
     while not solved:
         k += 1
-        solved, model = solve_k(num_qubits,  g_mat, fs, k)
+        solved, model = solve_k(num_qubits,  g_mat, fs, k, cm)
     return k, model
 
 def extract_circuit(num_qubits, k, cs, model):
@@ -144,6 +155,11 @@ def extract_circuit(num_qubits, k, cs, model):
             circuit.cx(c, t)
     return circuit
 
+def layout_circuit(file_name):
+    circ = QuantumCircuit.from_qasm_file(file_name)
+    pm = PassManager([ SabreLayout()]) 
+    pm.run(circ).qasm(filename="mapped_"+os.basename(file_name))
+
 
 if __name__ == "__main__":
     num_qubits = 3
@@ -154,7 +170,7 @@ if __name__ == "__main__":
         ]
     fs = [[1, 1, 0], [1, 1, 1]]
     cs = [math.pi/4, 7*math.pi/4]
-    k, model = solve(num_qubits, g_mat, fs)
+    k, model = solve(num_qubits, g_mat, fs, linearArch(3))
     print(k)
     print(model)
     print(extract_circuit(num_qubits, k, cs, model).qasm())
