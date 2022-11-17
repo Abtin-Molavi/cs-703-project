@@ -7,6 +7,9 @@ from qiskit.circuit import QuantumCircuit
 from qiskit.transpiler.passes import SabreLayout
 from qiskit.transpiler import PassManager
 import math
+from architectures import *
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning) 
 
 def initial_matrix_is_identity(num_qubits, vpool):
     clauses = []
@@ -161,6 +164,21 @@ def layout_circuit(file_name):
     pm.run(circ).qasm(filename="mapped_"+os.basename(file_name))
 
 
+def extract_G_fs(circuit):
+    state = np.identity(circuit.num_qubits, dtype=int).tolist()
+    fs = []
+    for g in circuit.data:
+        if g.operation.name == "cx":
+            c = g.qubits[0].index
+            t = g.qubits[1].index
+            state[t] = [1 if state[c][i] != state[t][i] else 0 for i in range(circuit.num_qubits)]
+        elif g.operation.name == "rz":
+            angle = g.operation.params[0]
+            q = g.qubits[0].index
+            fs.append((state[q], angle))
+        else:
+            raise RuntimeError(f"unexpected gate: {g.operation.name}")
+    return state, fs
 
 if __name__ == "__main__":
     num_qubits = 3
@@ -175,3 +193,6 @@ if __name__ == "__main__":
     print(k)
     print(model)
     print(extract_circuit(num_qubits, k, cs, model).qasm())
+
+    circuit = QuantumCircuit.from_qasm_file("random_circuits/random_q2_d2")
+    print(extract_G_fs(circuit))
