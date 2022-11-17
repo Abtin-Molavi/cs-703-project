@@ -71,7 +71,6 @@ def h_encodes_activated(num_qubits, vpool, k,):
                 clauses.append([vpool.id(('h', i, j, lk)), -vpool.id(('a', i, j, lk)), -vpool.id(('q', i, lk))])
     return clauses
 
-
 def transformation_clauses(num_qubits, vpool, k,):
     clauses = []
     for lk in range(k):
@@ -163,7 +162,6 @@ def layout_circuit(file_name):
     pm = PassManager([ SabreLayout()]) 
     pm.run(circ).qasm(filename="mapped_"+os.basename(file_name))
 
-
 def extract_G_fs(circuit):
     state = np.identity(circuit.num_qubits, dtype=int).tolist()
     fs = []
@@ -180,19 +178,13 @@ def extract_G_fs(circuit):
             raise RuntimeError(f"unexpected gate: {g.operation.name}")
     return state, fs
 
+
 if __name__ == "__main__":
-    num_qubits = 3
-    g_mat = [
-        [1, 0, 0], 
-        [1, 1, 0], 
-        [1, 1, 1], 
-        ]
-    fs = [[1, 1, 0], [1, 1, 1]]
-    cs = [math.pi/4, 7*math.pi/4]
-    k, model = solve(num_qubits, g_mat, fs, linearArch(3))
+    circuit = QuantumCircuit.from_qasm_file("random_circuits/paper_example")
+    G, fs = extract_G_fs(circuit)
+    fs, cs = zip(*fs)
+    k, model = solve(circuit.num_qubits, G, fs, linearArch(3))
+
     print(k)
     print(model)
-    print(extract_circuit(num_qubits, k, cs, model).qasm())
-
-    circuit = QuantumCircuit.from_qasm_file("random_circuits/random_q2_d2")
-    print(extract_G_fs(circuit))
+    print(extract_circuit(circuit.num_qubits, k, cs, model).qasm())
