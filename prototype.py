@@ -98,7 +98,7 @@ def pretty_print_var(x, vpool, aux_vars):
         else: 
             return("aux_var")
 
-def solve_k(num_qubits,  g_mat, fs, k, cm):
+def solve_k(num_qubits,  g_mat, fs, k, cm=None):
     num_a  = num_qubits*num_qubits*(k+1)
     num_q = num_qubits*k
     num_t = num_q
@@ -113,7 +113,7 @@ def solve_k(num_qubits,  g_mat, fs, k, cm):
             cnot_well_defined(num_qubits,vpool, k, aux_vars) +
             h_encodes_activated(num_qubits, vpool, k,) +
             transformation_clauses(num_qubits, vpool, k,) +
-            cnots_executable(num_qubits ,vpool, k, cm)
+            ([] if cm is None else cnots_executable(num_qubits ,vpool, k, cm))
             ) 
     # for clause in cnot_well_defined(num_qubits,vpool, k, aux_vars):
     #     print([vpool.obj(x) for x in clause])        
@@ -129,7 +129,7 @@ def solve_k(num_qubits,  g_mat, fs, k, cm):
             return s.get_status(),[vpool.obj(x) for x in s.get_model() if x > 0]
         return s.get_status(),[]
 
-def solve(num_qubits,  g_mat, fs, cm):
+def solve(num_qubits,  g_mat, fs, cm=None):
     solved = False
     k = 0
     while not solved:
@@ -197,8 +197,18 @@ def full_run(og_circuit_filename, arch):
     synthesized_circ = extract_circuit(mapped_circuit.num_qubits, k, cs, model)
     synthesized_circ.qasm(filename="synth_"+mapped_file_name)
 
+    # baseline
+    original_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
+
+    G, fs = extract_G_fs(original_circuit)
+    fs, cs = zip(*fs)
+    k, model = solve(original_circuit.num_qubits, G, fs)
+
+    baseline_synthesized_circ = extract_circuit(original_circuit.num_qubits, k, cs, model)
+    baseline_synthesized_circ.qasm(filename="baseline_synth_"+os.path.basename(og_circuit_filename))
+
     layout_circuit("synth_"+mapped_file_name, coupling_map, route=True)
-    layout_circuit(og_circuit_filename, coupling_map, route=True) # TODO: this should actually be the baseline synthesized one
+    layout_circuit("baseline_synth_"+os.path.basename(og_circuit_filename), coupling_map, route=True)
 
 
 if __name__ == "__main__":
