@@ -4,7 +4,7 @@ from pysat.card import CardEnc
 from pysat.solvers import Solver
 import numpy as np
 from qiskit.circuit import QuantumCircuit
-from qiskit.transpiler.passes import SabreLayout, SabreSwap
+from qiskit.transpiler.passes import SabreLayout, SabreSwap, ApplyLayout
 from qiskit.transpiler import PassManager, CouplingMap
 import math
 from architectures import *
@@ -161,10 +161,10 @@ def layout_circuit(file_name, coupling_map, route=False):
     circ = QuantumCircuit.from_qasm_file(file_name)
     cm = CouplingMap(np.argwhere(coupling_map > 0))
     if route:
-        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm))]) 
+        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm)), ApplyLayout(), SabreSwap(coupling_map=cm, heuristic="lookahead")]) 
         pm.run(circ).qasm(filename="mapped_and_routed_"+os.path.basename(file_name))
     else:
-        pm = PassManager([SabreLayout(coupling_map=cm)]) 
+        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm)), ApplyLayout()]) 
         pm.run(circ).qasm(filename="mapped_"+os.path.basename(file_name))
     return os.path.basename(file_name)
 
