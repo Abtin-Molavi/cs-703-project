@@ -4,7 +4,8 @@ from pysat.card import CardEnc
 from pysat.solvers import Solver
 import numpy as np
 from qiskit.circuit import QuantumCircuit
-from qiskit.transpiler.passes import SabreLayout, SabreSwap, ApplyLayout
+from qiskit.transpiler.passes import SabreLayout, SabreSwap, ApplyLayout, FullAncillaAllocation, EnlargeWithAncilla, BasisTranslator
+from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary as sel
 from qiskit.transpiler import PassManager, CouplingMap
 import math
 from architectures import *
@@ -175,10 +176,12 @@ def layout_circuit(file_name, coupling_map, route=False):
     circ = QuantumCircuit.from_qasm_file(file_name)
     cm = CouplingMap(np.argwhere(coupling_map > 0))
     if route:
-        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm, heuristic="lookahead")), SabreSwap(coupling_map=cm, heuristic="lookahead")]) 
+        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm, heuristic="lookahead")), FullAncillaAllocation(cm),
+                      EnlargeWithAncilla(), ApplyLayout(),  SabreSwap(coupling_map=cm, heuristic="lookahead"), BasisTranslator(sel, ['rz', 'cx'])]) 
         pm.run(circ).qasm(filename="mapped_and_routed_"+os.path.basename(file_name))
     else:
-        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm, heuristic="lookahead"))]) 
+        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm, heuristic="lookahead")), FullAncillaAllocation(cm),
+                      EnlargeWithAncilla(), ApplyLayout()]) 
         pm.run(circ).qasm(filename="mapped_"+os.path.basename(file_name))
     return os.path.basename(file_name)
 
@@ -199,17 +202,16 @@ def extract_G_fs(circuit):
     return state, fs
 
 def full_run(og_circuit_filename, arch):
-    mapped_file_name = layout_circuit(og_circuit_filename, arch)
-    mapped_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
-
-    G, fs = extract_G_fs(mapped_circuit)
+    input_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
+    base_name = os.path.basename(og_circuit_filename)
+    G, fs = extract_G_fs(input_circuit)
     fs, cs = zip(*fs)
-    k, model = solve(mapped_circuit.num_qubits, G, fs, arch)
+    k, model = solve(input_circuit.num_qubits, G, fs, arch)
 
     # print(k)
     # print(model)
-    synthesized_circ = extract_circuit(mapped_circuit.num_qubits, k, cs, model)
-    synthesized_circ.qasm(filename="synth_"+mapped_file_name)
+    synthesized_circ = extract_circuit(input_circuit.num_qubits, k, cs, model)
+    synthesized_circ.qasm(filename="synth_"+base_name)
 
     # baseline
     original_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
@@ -223,11 +225,11 @@ def full_run(og_circuit_filename, arch):
     baseline_synthesized_circ = extract_circuit(original_circuit.num_qubits, k, cs, model)
     baseline_synthesized_circ.qasm(filename="baseline_synth_"+os.path.basename(og_circuit_filename))
 
-    layout_circuit("synth_"+mapped_file_name, arch, route=True)
+    layout_circuit("synth_"+base_name, arch, route=True)
     layout_circuit("baseline_synth_"+os.path.basename(og_circuit_filename), arch, route=True)
 
-    routed_baseline = QuantumCircuit.from_qasm_file("baseline_synth_"+os.path.basename(og_circuit_filename))
-    routed = QuantumCircuit.from_qasm_file("synth_"+mapped_file_name)
+    routed_baseline = QuantumCircuit.from_qasm_file("mapped_and_routed_"+"baseline_synth_"+os.path.basename(og_circuit_filename))
+    routed = QuantumCircuit.from_qasm_file("mapped_and_routed_"+"synth_"+base_name)
     if routed.num_nonlocal_gates() == routed_baseline.num_nonlocal_gates():
         print(f"same {routed.num_nonlocal_gates()}")
     elif routed.num_nonlocal_gates() < routed_baseline.num_nonlocal_gates():
@@ -237,4 +239,4 @@ def full_run(og_circuit_filename, arch):
 
 
 if __name__ == "__main__":
-    full_run("random_circuits/random_q4_d6.qasm", linearArch(4))
+    full_run("random_circuits/random_q3_d5.qasm", linearArch(3))
