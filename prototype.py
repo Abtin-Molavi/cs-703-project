@@ -146,10 +146,10 @@ def solve(num_qubits,  g_mat, fs, cm=None):
     solved = False
     k = 0
     while not solved:
-        k += 1
         print(k)
         solved, model = solve_k(num_qubits,  g_mat, fs, k, cm)
-    return k, model
+        k += 1
+    return k-1, model
 
 def extract_circuit(num_qubits, k, cs, model):
     circuit = QuantumCircuit(num_qubits)
@@ -175,10 +175,10 @@ def layout_circuit(file_name, coupling_map, route=False):
     circ = QuantumCircuit.from_qasm_file(file_name)
     cm = CouplingMap(np.argwhere(coupling_map > 0))
     if route:
-        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm)), ApplyLayout(), SabreSwap(coupling_map=cm, heuristic="lookahead")]) 
+        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm, heuristic="lookahead")), SabreSwap(coupling_map=cm, heuristic="lookahead")]) 
         pm.run(circ).qasm(filename="mapped_and_routed_"+os.path.basename(file_name))
     else:
-        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm)), ApplyLayout()]) 
+        pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm, heuristic="lookahead"))]) 
         pm.run(circ).qasm(filename="mapped_"+os.path.basename(file_name))
     return os.path.basename(file_name)
 
@@ -204,11 +204,10 @@ def full_run(og_circuit_filename, arch):
 
     G, fs = extract_G_fs(mapped_circuit)
     fs, cs = zip(*fs)
-    print(G,fs, "ours")
     k, model = solve(mapped_circuit.num_qubits, G, fs, arch)
 
-    print(k)
-    print(model)
+    # print(k)
+    # print(model)
     synthesized_circ = extract_circuit(mapped_circuit.num_qubits, k, cs, model)
     synthesized_circ.qasm(filename="synth_"+mapped_file_name)
 
@@ -216,17 +215,26 @@ def full_run(og_circuit_filename, arch):
     original_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
 
     G, fs = extract_G_fs(original_circuit)
-    print(G,fs, "baseline")
     fs, cs = zip(*fs)
     k, model = solve(original_circuit.num_qubits, G, fs)
 
+    # print(k)
+    # print(model)
     baseline_synthesized_circ = extract_circuit(original_circuit.num_qubits, k, cs, model)
     baseline_synthesized_circ.qasm(filename="baseline_synth_"+os.path.basename(og_circuit_filename))
 
-    layout_circuit("synth_"+mapped_file_name, coupling_map, route=True)
-    layout_circuit("baseline_synth_"+os.path.basename(og_circuit_filename), coupling_map, route=True)
+    layout_circuit("synth_"+mapped_file_name, arch, route=True)
+    layout_circuit("baseline_synth_"+os.path.basename(og_circuit_filename), arch, route=True)
+
+    routed_baseline = QuantumCircuit.from_qasm_file("baseline_synth_"+os.path.basename(og_circuit_filename))
+    routed = QuantumCircuit.from_qasm_file("synth_"+mapped_file_name)
+    if routed.num_nonlocal_gates() == routed_baseline.num_nonlocal_gates():
+        print(f"same {routed.num_nonlocal_gates()}")
+    elif routed.num_nonlocal_gates() < routed_baseline.num_nonlocal_gates():
+        print(f"baseline worse {routed.num_nonlocal_gates()} {routed_baseline.num_nonlocal_gates()}")
+    else:
+        print(f"baseline better {routed.num_nonlocal_gates()} {routed_baseline.num_nonlocal_gates()}")
 
 
 if __name__ == "__main__":
-    coupling_map = linearArch(3)
-    full_run("random_circuits/problem.qasm", linearArch(3))
+    full_run("random_circuits/random_q4_d6.qasm", linearArch(4))
