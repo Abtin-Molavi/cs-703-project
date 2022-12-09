@@ -43,6 +43,16 @@ def final_matrix_properties(num_qubits, vpool, g_mat, fs, k):
                     clauses.append([-vpool.id(('p', i, lk, f)), j_term])
     return clauses
 
+def injective_initial_map(num_qubits, vpool, cm, aux_vars):
+    clauses = []
+    for j in range(len(cm)):
+        clauses.extend(CardEnc.atmost([vpool.id(('m', i, j)) for i in range(num_qubits)], 1, vpool=aux_vars).clauses)
+    for i in range(num_qubits):
+        clauses.extend(CardEnc.equals([vpool.id(('m', i, j)) for j in range(len(cm))], 1, vpool=aux_vars).clauses)
+    return clauses
+
+
+
 def cnot_well_defined(num_qubits,vpool, k, aux_vars):
     clauses = []
     for lk in range(k):
@@ -57,8 +67,10 @@ def cnots_executable(num_qubits ,vpool, k, cm):
     clauses = []
     for lk in range(k):
         for i in range(num_qubits):
-                adjacent = [t for [t] in np.argwhere(cm[i] > 0)]
-                clauses.append([-vpool.id(('q', i, lk))] + [vpool.id(("t", j, lk)) for j in adjacent])
+            for j in range(num_qubits):
+                for p1 in range(len(cm)):
+                    adjacent = [p2 for [p2] in np.argwhere(cm[p1] > 0)]
+                    clauses.append([-vpool.id(('q', i, lk)), -vpool.id(("t", j, lk)), -vpool.id(('m', i, p1)) ] + [vpool.id(("m", j, p2)) for p2 in adjacent])
     return clauses
 
 def h_encodes_activated(num_qubits, vpool, k,):
@@ -104,7 +116,8 @@ def solve_k(num_qubits,  g_mat, fs, k, cm=None):
     num_t = num_q
     num_p = num_qubits*len(fs)*(k+1)
     num_h = num_qubits*num_qubits*k
-    top = num_a+num_p+num_q+num_t+num_h
+    num_m = num_qubits*len(cm) if cm is not None else 0
+    top = num_a+num_p+num_q+num_t+num_h+num_m
     vpool = IDPool()
     aux_vars = IDPool(start_from=top+1)
     clauses = (
@@ -113,7 +126,7 @@ def solve_k(num_qubits,  g_mat, fs, k, cm=None):
             cnot_well_defined(num_qubits,vpool, k, aux_vars) +
             h_encodes_activated(num_qubits, vpool, k,) +
             transformation_clauses(num_qubits, vpool, k,) +
-            ([] if cm is None else cnots_executable(num_qubits ,vpool, k, cm))
+            ([] if cm is None else cnots_executable(num_qubits ,vpool, k, cm) + injective_initial_map(num_qubits, vpool, cm, aux_vars) )
             ) 
     # for clause in cnot_well_defined(num_qubits,vpool, k, aux_vars):
     #     print([vpool.obj(x) for x in clause])        
@@ -134,6 +147,7 @@ def solve(num_qubits,  g_mat, fs, cm=None):
     k = 0
     while not solved:
         k += 1
+        print(k)
         solved, model = solve_k(num_qubits,  g_mat, fs, k, cm)
     return k, model
 
@@ -186,10 +200,11 @@ def extract_G_fs(circuit):
 
 def full_run(og_circuit_filename, arch):
     mapped_file_name = layout_circuit(og_circuit_filename, arch)
-    mapped_circuit = QuantumCircuit.from_qasm_file("mapped_"+mapped_file_name)
+    mapped_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
 
     G, fs = extract_G_fs(mapped_circuit)
     fs, cs = zip(*fs)
+    print(G,fs, "ours")
     k, model = solve(mapped_circuit.num_qubits, G, fs, arch)
 
     print(k)
@@ -201,6 +216,7 @@ def full_run(og_circuit_filename, arch):
     original_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
 
     G, fs = extract_G_fs(original_circuit)
+    print(G,fs, "baseline")
     fs, cs = zip(*fs)
     k, model = solve(original_circuit.num_qubits, G, fs)
 
@@ -213,4 +229,4 @@ def full_run(og_circuit_filename, arch):
 
 if __name__ == "__main__":
     coupling_map = linearArch(3)
-    full_run("random_circuits/paper_example", linearArch(3))
+    full_run("random_circuits/problem.qasm", linearArch(3))
