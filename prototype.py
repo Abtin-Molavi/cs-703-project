@@ -392,4 +392,5 @@ if __name__ == "__main__":
         os.makedirs(backend_output_dir)
 
     for filename in os.listdir(benchmark_dir):
+        if "manila" in architecture and "random" in filename and int(filename[filename.find("q")+1:filename.rfind("_")]) > 5: continue
         full_run(f"{benchmark_dir}/{filename}", backend_output_dir, backend, timeout)
