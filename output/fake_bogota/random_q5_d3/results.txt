@@ -1,0 +1,1 @@
+{'circuit': 'random_q5_d3.qasm', 'backend': 'fake_bogota', 'noise_aware': {'cx': 11, 'fidelity': 0.8105927560816315, 'time': 22.302553176879883}, 'conn_aware': {'cx': 11, 'fidelity': 0.6972990410671627, 'time': 1.07749342918396}, 'baseline': {'cx': 11, 'fidelity': 0.6573312233728801, 'time': 0.6485099792480469}}

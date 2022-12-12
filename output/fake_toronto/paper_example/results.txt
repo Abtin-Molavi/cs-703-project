@@ -1,0 +1,1 @@
+{'circuit': 'paper_example', 'backend': 'fake_toronto', 'noise_aware': {'cx': 2, 'fidelity': 0.9811110728069791, 'time': 0.7932295799255371}, 'conn_aware': {'cx': 2, 'fidelity': 0.9796574011638969, 'time': 0.17097949981689453}, 'baseline': {'cx': 2, 'fidelity': 0.9758115377110035, 'time': 0.01813340187072754}}
