@@ -293,6 +293,17 @@ def get_fidelity(circuit, calibration_data):
             fidelity *= 1-calibration_data[(c, t)]
     return fidelity
 
+def check_connectivity(file, cm):
+  with open(file) as f:
+    lines = f.readlines()
+    for line in lines:
+      if "cx" in line:
+        control = int(line[line.find("[")+1:line.find("]")])
+        target = int(line[line.rfind("[")+1:line.rfind("]")])
+        if (control, target) not in cm:
+          return False
+  return True
+
 def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
     input_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
     base_name = os.path.basename(og_circuit_filename)
@@ -318,7 +329,7 @@ def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
         time_na = time2 - time1
         noise_aware_synth_filename = f"{benchmark_output_dir}/noise_aware_synth_"+base_name
         synthesized_circ.qasm(filename=noise_aware_synth_filename)
-        final_circuit_na = layout_circuit(noise_aware_synth_filename, backend, noise_aware=True)
+        final_circuit_na = layout_circuit(noise_aware_synth_filename, backend, noise_aware=True) if not check_connectivity(noise_aware_synth_filename, backend.configuration().coupling_map) else synthesized_circ
         final_circuit_na.qasm(filename=f"{benchmark_output_dir}/final_noise_aware_synth_{base_name}")
         result["noise_aware"] = {"cx": final_circuit_na.num_nonlocal_gates(), "fidelity": get_fidelity(final_circuit_na, calibration_data), "time": time_na}
     else:
@@ -336,7 +347,7 @@ def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
         time_ca = time4 - time3
         conn_aware_synth_filename = f"{benchmark_output_dir}/conn_aware_synth_"+base_name
         synthesized_circ.qasm(filename=conn_aware_synth_filename)
-        final_circuit_ca = layout_circuit(conn_aware_synth_filename, backend)
+        final_circuit_ca = layout_circuit(conn_aware_synth_filename, backend) if not check_connectivity(conn_aware_synth_filename, backend.configuration().coupling_map) else synthesized_circ
         final_circuit_ca.qasm(filename=f"{benchmark_output_dir}/final_conn_aware_synth_{base_name}")
         result["conn_aware"] = {"cx": final_circuit_ca.num_nonlocal_gates(), "fidelity": get_fidelity(final_circuit_ca, calibration_data), "time": time_ca}
     else:
@@ -354,11 +365,15 @@ def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
         time_baseline = time6 - time5
         baseline_synth_filename = f"{benchmark_output_dir}/baseline_synth_"+base_name
         baseline_synthesized_circ.qasm(filename=baseline_synth_filename)
-        final_circuit_baseline = layout_circuit(baseline_synth_filename, backend)
+        final_circuit_baseline = layout_circuit(baseline_synth_filename, backend) if not check_connectivity(baseline_synth_filename, backend.configuration().coupling_map) else synthesized_circ
         final_circuit_baseline.qasm(filename=f"{benchmark_output_dir}/final_baseline_synth_{base_name}")
+        final_cicuit_baseline_na = layout_circuit(baseline_synth_filename, backend, noise_aware=True)
+        final_cicuit_baseline_na.qasm(filename=f"{benchmark_output_dir}/final_baseline_na_synth_{base_name}")
         result["baseline"] = {"cx": final_circuit_baseline.num_nonlocal_gates(), "fidelity": get_fidelity(final_circuit_baseline, calibration_data), "time": time_baseline}
+        result["baseline_na"] = {"cx": final_cicuit_baseline_na.num_nonlocal_gates(), "fidelity": get_fidelity(final_cicuit_baseline_na, calibration_data), "time": time_baseline}
     else:
         result["baseline"] = {"timeout": True}
+        result["baseline_na"] = {"timeout": True}
 
     with open(f"{benchmark_output_dir}/results.txt", "w") as f:
         f.write(f"{result}")
