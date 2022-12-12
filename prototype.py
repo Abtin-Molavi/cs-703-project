@@ -1,6 +1,10 @@
 import math
 import os
+import signal
+import sys
 import warnings
+from contextlib import contextmanager
+from time import time
 
 import numpy as np
 from pysat.card import CardEnc
@@ -9,15 +13,30 @@ from pysat.formula import WCNF, IDPool
 from pysat.solvers import Solver
 from qiskit.circuit import QuantumCircuit
 from qiskit.circuit.equivalence_library import SessionEquivalenceLibrary as sel
+from qiskit.providers.fake_provider import FakeBogota
 from qiskit.transpiler import CouplingMap, PassManager
 from qiskit.transpiler.passes import (ApplyLayout, BasisTranslator,
                                       EnlargeWithAncilla,
-                                      FullAncillaAllocation, SabreLayout,
-                                      SabreSwap, NoiseAdaptiveLayout)
-from qiskit.providers.fake_provider import FakeBogota
+                                      FullAncillaAllocation,
+                                      NoiseAdaptiveLayout, SabreLayout,
+                                      SabreSwap)
+
 from architectures import *
 
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
+
+class TimeoutException(Exception): pass
+
+@contextmanager
+def time_limit(seconds):
+    def signal_handler(signum, frame):
+        raise TimeoutException("Timed out!")
+    signal.signal(signal.SIGALRM, signal_handler)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
 
 def initial_matrix_is_identity(num_qubits, vpool):
     clauses = []
@@ -169,17 +188,19 @@ def solve_k(num_qubits,  g_mat, fs, k, cm=None, calibration_data=None):
         soft_clauses.to_file(f'test_{k}.wcnf')
         with RC2(soft_clauses, solver='cd', verbose=True) as rc2:
             model = rc2.compute()
-            print(model)
             return model is not None, [vpool.obj(x) for x in model if x > 0] if model is not None else None
 
-def solve(num_qubits,  g_mat, fs, cm=None, calibration_data=None):
-    solved = False
-    k = 0
-    while not solved:
-        print(k)
-        solved, model = solve_k(num_qubits,  g_mat, fs, k, cm, calibration_data)
-        k += 1
-    return k-1, model
+def solve(num_qubits,  g_mat, fs, timeout, cm=None, calibration_data=None):
+    try:
+        with time_limit(timeout):
+            solved = False
+            k = 0
+            while not solved:
+                solved, model = solve_k(num_qubits,  g_mat, fs, k, cm, calibration_data)
+                k += 1
+            return k-1, model
+    except TimeoutException as e:
+        return None, None
 
 def extract_circuit(num_qubits, k, cs, model):
     circuit = QuantumCircuit(num_qubits)
@@ -201,19 +222,18 @@ def extract_circuit(num_qubits, k, cs, model):
             circuit.cx(c, t)
     return circuit
 
-def layout_circuit(file_name,  backend, noise_aware=False):
+def layout_circuit(file_name, backend, noise_aware=False):
     circ = QuantumCircuit.from_qasm_file(file_name)
     cm = CouplingMap(backend.configuration().coupling_map)
     
     if not noise_aware:
         pm = PassManager([SabreLayout(coupling_map=cm, routing_pass=SabreSwap(cm, heuristic="lookahead")), FullAncillaAllocation(cm),
-                      EnlargeWithAncilla(), ApplyLayout(),  SabreSwap(coupling_map=cm, heuristic="lookahead"), BasisTranslator(sel, ['rz', 'cx'])]) 
-        pm.run(circ).qasm(filename="mapped_and_routed_"+os.path.basename(file_name))
+                      EnlargeWithAncilla(), ApplyLayout(), SabreSwap(coupling_map=cm, heuristic="lookahead"), BasisTranslator(sel, ['rz', 'cx'])]) 
+        return pm.run(circ)
     else:
         pm = PassManager([NoiseAdaptiveLayout(backend.properties()), FullAncillaAllocation(cm),
-                      EnlargeWithAncilla(), ApplyLayout()]) 
-        pm.run(circ).qasm(filename="mapped_and_routed_"+os.path.basename(file_name))
-    return os.path.basename(file_name)
+                      EnlargeWithAncilla(), ApplyLayout(), SabreSwap(coupling_map=cm, heuristic="lookahead"), BasisTranslator(sel, ['rz', 'cx'])]) 
+        return pm.run(circ)
 
 def extract_G_fs(circuit):
     state = np.identity(circuit.num_qubits, dtype=int).tolist()
@@ -243,59 +263,85 @@ def get_calibration_data(backend):
         calibration_data[tuple(edge)] = backend.properties().gate_error('cx', edge)
     return calibration_data
 
-def full_run(og_circuit_filename, backend):
+def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
     input_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
     base_name = os.path.basename(og_circuit_filename)
     arch = to_adjacency_matrix(backend)
     calibration_data = get_calibration_data(backend)
+    result = {}
+    result["circuit"] = os.path.basename(og_circuit_filename)
+    result["backend"] = backend.name()
+
+    benchmark_output_dir = f"{backend_output_dir}/{os.path.splitext(base_name)[0]}"
+    if not os.path.exists(benchmark_output_dir):
+        os.makedirs(benchmark_output_dir)
+
     # noise-aware
+    time1 = time()
     G, fs = extract_G_fs(input_circuit)
     fs, cs = zip(*fs)
-    k, model = solve(input_circuit.num_qubits, G, fs, arch, calibration_data)
+    k, model = solve(input_circuit.num_qubits, G, fs, timeout, arch, calibration_data)
 
-    # print(k)
-    # print(model)
-    synthesized_circ = extract_circuit(input_circuit.num_qubits, k, cs, model)
-    synthesized_circ.qasm(filename="noise_aware_synth_"+base_name)
+    if k is not None:
+        synthesized_circ = extract_circuit(input_circuit.num_qubits, k, cs, model)
+        time2 = time()
+        time_na = time2 - time1
+        noise_aware_synth_filename = f"{benchmark_output_dir}/noise_aware_synth_"+base_name
+        synthesized_circ.qasm(filename=noise_aware_synth_filename)
+        final_circuit_na = layout_circuit(noise_aware_synth_filename, backend, noise_aware=True)
+        final_circuit_na.qasm(filename=f"{benchmark_output_dir}/final_noise_aware_synth_{base_name}")
+        result["noise_aware"] = {"cx": final_circuit_na.num_nonlocal_gates(), "time": time_na}
+    else:
+        result["noise_aware"] = {"timeout": True}
     
     # connectivity aware
+    time3 = time()
     G, fs = extract_G_fs(input_circuit)
     fs, cs = zip(*fs)
-    k, model = solve(input_circuit.num_qubits, G, fs, arch)
+    k, model = solve(input_circuit.num_qubits, G, fs, timeout, arch)
 
-    # print(k)
-    # print(model)
-    synthesized_circ = extract_circuit(input_circuit.num_qubits, k, cs, model)
-    synthesized_circ.qasm(filename="synth_"+base_name)
+    if k is not None:
+        synthesized_circ = extract_circuit(input_circuit.num_qubits, k, cs, model)
+        time4 = time()
+        time_ca = time4 - time3
+        conn_aware_synth_filename = f"{benchmark_output_dir}/conn_aware_synth_"+base_name
+        synthesized_circ.qasm(filename=conn_aware_synth_filename)
+        final_circuit_ca = layout_circuit(conn_aware_synth_filename, backend)
+        final_circuit_ca.qasm(filename=f"{benchmark_output_dir}/final_conn_aware_synth_{base_name}")
+        result["conn_aware"] = {"cx": final_circuit_ca.num_nonlocal_gates(), "time": time_ca}
+    else:
+        result["conn_aware"] = {"timeout": True}
 
     # baseline
-    original_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
-
-    G, fs = extract_G_fs(original_circuit)
+    time5 = time()
+    G, fs = extract_G_fs(input_circuit)
     fs, cs = zip(*fs)
-    k, model = solve(original_circuit.num_qubits, G, fs)
+    k, model = solve(input_circuit.num_qubits, G, fs, timeout)
 
- 
-
-    # print(k)
-    # print(model)
-    baseline_synthesized_circ = extract_circuit(original_circuit.num_qubits, k, cs, model)
-    baseline_synthesized_circ.qasm(filename="baseline_synth_"+os.path.basename(og_circuit_filename))
-
-    layout_circuit("noise_aware_synth_"+base_name, backend, noise_aware=True)
-    layout_circuit("synth_"+base_name, backend)
-    layout_circuit("baseline_synth_"+os.path.basename(og_circuit_filename), backend)
-
-    routed_baseline = QuantumCircuit.from_qasm_file("mapped_and_routed_"+"baseline_synth_"+os.path.basename(og_circuit_filename))
-    routed = QuantumCircuit.from_qasm_file("mapped_and_routed_"+"synth_"+base_name)
-    routed_na = QuantumCircuit.from_qasm_file("mapped_and_routed_"+"noise_aware_synth_"+base_name)
-    if routed.num_nonlocal_gates() == routed_baseline.num_nonlocal_gates():
-        print(f"same {routed.num_nonlocal_gates()}")
-    elif routed.num_nonlocal_gates() < routed_baseline.num_nonlocal_gates():
-        print(f"baseline worse {routed.num_nonlocal_gates()} {routed_baseline.num_nonlocal_gates()}")
+    if k is not None:
+        baseline_synthesized_circ = extract_circuit(input_circuit.num_qubits, k, cs, model)
+        time6 = time()
+        time_baseline = time6 - time5
+        baseline_synth_filename = f"{benchmark_output_dir}/baseline_synth_"+base_name
+        baseline_synthesized_circ.qasm(filename=baseline_synth_filename)
+        final_circuit_baseline = layout_circuit(baseline_synth_filename, backend)
+        final_circuit_baseline.qasm(filename=f"{benchmark_output_dir}/final_baseline_synth_{base_name}")
+        result["baseline"] = {"cx": final_circuit_baseline.num_nonlocal_gates(), "time": time_baseline}
     else:
-        print(f"baseline better {routed.num_nonlocal_gates()} {routed_baseline.num_nonlocal_gates()}")
+        result["baseline"] = {"timeout": True}
+
+    with open(f"{benchmark_output_dir}/results.txt", "w") as f:
+        f.write(f"{result}")
 
 
 if __name__ == "__main__":
-    full_run("random_circuits/random_q5_d3.qasm", FakeBogota())
+    # args = sys.argv[1:]
+    # benchmark_dir = args[0]
+    output_dir = "output"
+    # architecture = args[2]
+    timeout = 600
+    backend = FakeBogota()
+    backend_output_dir = f"{output_dir}/{backend.name()}"
+    if not os.path.exists(backend_output_dir):
+        os.makedirs(backend_output_dir)
+    full_run("random_circuits/random_q2_d3.qasm", backend_output_dir, backend, timeout)
