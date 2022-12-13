@@ -294,19 +294,20 @@ def get_fidelity(circuit, calibration_data):
     return fidelity
 
 def check_connectivity(file, cm):
-  with open(file) as f:
-    lines = f.readlines()
-    for line in lines:
-      if "cx" in line:
-        control = int(line[line.find("[")+1:line.find("]")])
-        target = int(line[line.rfind("[")+1:line.rfind("]")])
-        if (control, target) not in cm:
-          return False
-  return True
+    with open(file) as f:
+        lines = f.readlines()
+        for line in lines:
+            if "cx" in line:
+                control = int(line[line.find("[")+1:line.find("]")])
+                target = int(line[line.rfind("[")+1:line.rfind("]")])
+                if [control, target] not in cm:
+                    return False
+    return True
 
 def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
     input_circuit = QuantumCircuit.from_qasm_file(og_circuit_filename)
     base_name = os.path.basename(og_circuit_filename)
+    print(base_name)
     arch = to_adjacency_matrix(backend)
     calibration_data = get_calibration_data(backend)
     result = {}
@@ -320,7 +321,7 @@ def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
     # noise-aware
     time1 = time()
     G, fs = extract_G_fs(input_circuit)
-    fs, cs = zip(*fs)
+    fs, cs = ([],[]) if len(fs) == 0 else zip(*fs)
     k, model = solve(input_circuit.num_qubits, G, fs, timeout, arch, calibration_data)
 
     if k is not None:
@@ -338,7 +339,7 @@ def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
     # connectivity aware
     time3 = time()
     G, fs = extract_G_fs(input_circuit)
-    fs, cs = zip(*fs)
+    fs, cs = ([],[]) if len(fs) == 0 else zip(*fs)
     k, model = solve(input_circuit.num_qubits, G, fs, timeout, arch)
 
     if k is not None:
@@ -356,7 +357,7 @@ def full_run(og_circuit_filename, backend_output_dir, backend, timeout):
     # baseline
     time5 = time()
     G, fs = extract_G_fs(input_circuit)
-    fs, cs = zip(*fs)
+    fs, cs = ([],[]) if len(fs) == 0 else zip(*fs)
     k, model = solve(input_circuit.num_qubits, G, fs, timeout)
 
     if k is not None:
@@ -391,6 +392,11 @@ if __name__ == "__main__":
     if not os.path.exists(backend_output_dir):
         os.makedirs(backend_output_dir)
 
+    # full_run("random_circuits/random_q2_d1.qasm", backend_output_dir, backend, timeout)
+
     for filename in os.listdir(benchmark_dir):
         if "manila" in architecture and "random" in filename and int(filename[filename.find("q")+1:filename.rfind("_")]) > 5: continue
+        if os.path.exists(f"{backend_output_dir}/{os.path.splitext(filename)[0]}/results.txt"): continue
+        if QuantumCircuit.from_qasm_file(f"{benchmark_dir}/{filename}").num_nonlocal_gates() > 20:
+            continue
         full_run(f"{benchmark_dir}/{filename}", backend_output_dir, backend, timeout)
