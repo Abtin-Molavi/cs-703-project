@@ -1,0 +1,1 @@
+{'circuit': 'random_q5_d6.qasm', 'backend': 'fake_manila', 'noise_aware': {'timeout': True}, 'conn_aware': {'timeout': True}, 'baseline': {'cx': 21, 'fidelity': 0.792623864517594, 'time': 18.50627088546753}, 'baseline_na': {'cx': 33, 'fidelity': 0.6849160786826939, 'time': 18.50627088546753}}
