@@ -1,0 +1,1 @@
+{'circuit': 'random_q5_d5.qasm', 'backend': 'fake_toronto', 'noise_aware': {'timeout': True}, 'conn_aware': {'timeout': True}, 'baseline': {'cx': 16, 'fidelity': 0.3533631600013504, 'time': 2.7978134155273438}, 'baseline_na': {'cx': 19, 'fidelity': 0.8158229751037882, 'time': 2.7978134155273438}}

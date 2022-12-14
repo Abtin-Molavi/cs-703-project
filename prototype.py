@@ -43,9 +43,9 @@ def initial_matrix_is_identity(num_qubits, vpool):
     for i in range(num_qubits):
         for j in range(num_qubits):
             if i == j:
-                clauses.append([vpool.id(("a", i, j, 0))])
+                clauses.append([vpool.id(('a', i, j, 0))])
             else: 
-                clauses.append([-vpool.id(("a", i, j, 0))])
+                clauses.append([-vpool.id(('a', i, j, 0))])
     return clauses
 
 def final_matrix_properties(num_qubits, vpool, g_mat, fs, k):
@@ -53,9 +53,9 @@ def final_matrix_properties(num_qubits, vpool, g_mat, fs, k):
     for i in range(num_qubits):
         for j in range(num_qubits):
             if g_mat[i][j] == 1:            
-                clauses.append([vpool.id(("a", i, j, k))])
+                clauses.append([vpool.id(('a', i, j, k))])
             else:
-                clauses.append([-vpool.id(("a", i, j, k))])
+                clauses.append([-vpool.id(('a', i, j, k))])
     
     for f in range(len(fs)):
         clauses.append([vpool.id(('p', i, lk, f)) for i in range(num_qubits) for lk in range(k+1)])
@@ -97,7 +97,7 @@ def cnots_executable(num_qubits ,vpool, k, cm):
             for j in range(num_qubits):
                 for p1 in range(len(cm)):
                     adjacent = [p2 for [p2] in np.argwhere(cm[p1] > 0)]
-                    clauses.append([-vpool.id(('q', i, lk)), -vpool.id(("t", j, lk)), -vpool.id(('m', i, p1)) ] + [vpool.id(("m", j, p2)) for p2 in adjacent])
+                    clauses.append([-vpool.id(('q', i, lk)), -vpool.id(('t', j, lk)), -vpool.id(('m', i, p1)) ] + [vpool.id(('m', j, p2)) for p2 in adjacent])
     return clauses
 
 def h_encodes_activated(num_qubits, vpool, k,):
@@ -392,7 +392,7 @@ if __name__ == "__main__":
     if not os.path.exists(backend_output_dir):
         os.makedirs(backend_output_dir)
 
-    # full_run("random_circuits/random_q2_d1.qasm", backend_output_dir, backend, timeout)
+    # full_run("random_circuits/random_q4_d9.qasm", backend_output_dir, backend, timeout)
 
     for filename in os.listdir(benchmark_dir):
         if "manila" in architecture and "random" in filename and int(filename[filename.find("q")+1:filename.rfind("_")]) > 5: continue

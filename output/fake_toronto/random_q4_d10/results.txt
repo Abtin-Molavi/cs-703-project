@@ -1,0 +1,1 @@
+{'circuit': 'random_q4_d10.qasm', 'backend': 'fake_toronto', 'noise_aware': {'timeout': True}, 'conn_aware': {'cx': 7, 'fidelity': 0.9439999585668255, 'time': 8.217814683914185}, 'baseline': {'cx': 7, 'fidelity': 0.9270195472669047, 'time': 0.5412931442260742}, 'baseline_na': {'cx': 10, 'fidelity': 0.7186466456235459, 'time': 0.5412931442260742}}
